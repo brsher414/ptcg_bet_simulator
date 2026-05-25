@@ -26,6 +26,11 @@ export interface StrategyMetrics {
   targetHitProbability: number;
 }
 
+interface ChaseOutcome {
+  expectedDraws: number;
+  hitProbability: number;
+}
+
 export interface StrategyCompareOptions {
   poolState: PoolState;
   costPerEntry: number;
@@ -55,6 +60,30 @@ function buildStrategyDraws(def: StrategyDefinition, maxPlayableDraws: number, p
   return def.plannedDraws(maxPlayableDraws);
 }
 
+function calcChaseOutcome(poolState: PoolState, plannedDraws: number, targetValue: number): ChaseOutcome {
+  const tiers = poolState.tiers.map((tier) => ({ value: tier.value, count: Math.max(0, Math.floor(tier.count)) }));
+  const total = tiers.reduce((sum, tier) => sum + tier.count, 0);
+  if (plannedDraws <= 0 || total <= 0) return { expectedDraws: 0, hitProbability: 0 };
+
+  const highCount = tiers.reduce((sum, tier) => sum + (tier.value >= targetValue ? tier.count : 0), 0);
+  if (highCount <= 0) return { expectedDraws: plannedDraws, hitProbability: 0 };
+
+  const cappedDraws = Math.min(plannedDraws, total);
+  let missProb = 1;
+  let expectedDraws = cappedDraws;
+  let hitProbability = 0;
+
+  for (let drawIdx = 1; drawIdx <= cappedDraws; drawIdx += 1) {
+    const remainingBeforeDraw = total - (drawIdx - 1);
+    const hitAtDrawProb = missProb * (highCount / remainingBeforeDraw);
+    hitProbability += hitAtDrawProb;
+    expectedDraws -= (cappedDraws - drawIdx) * hitAtDrawProb;
+    missProb *= (remainingBeforeDraw - highCount) / remainingBeforeDraw;
+  }
+
+  return { expectedDraws, hitProbability };
+}
+
 function sortRows(rows: StrategyMetrics[], sortBy: SortKey): StrategyMetrics[] {
   return [...rows].sort((a, b) => (b[sortBy] ?? 0) - (a[sortBy] ?? 0));
 }
@@ -78,9 +107,14 @@ export function compareStrategies(options: StrategyCompareOptions): {
 
   const rows = strategyDefinitions.map((def) => {
     const plannedDraws = buildStrategyDraws(def, maxPlayableDraws, options.plannedN);
-    const ev = calcNDrawEV(options.poolState, options.costPerEntry, plannedDraws, options.stopAtCount);
+    const chaseOutcome = def.id === 'chaseJackpotToN'
+      ? calcChaseOutcome(options.poolState, plannedDraws, options.targetValue)
+      : null;
+    const effectiveDraws = chaseOutcome ? chaseOutcome.expectedDraws : plannedDraws;
+
+    const ev = calcNDrawEV(options.poolState, options.costPerEntry, effectiveDraws, options.stopAtCount);
     const risk = calcRiskMetrics(options.poolState, {
-      plannedDraws,
+      plannedDraws: effectiveDraws,
       costPerEntry: options.costPerEntry,
       stopAtCount: options.stopAtCount,
       highValueThreshold: options.targetValue,
@@ -96,7 +130,7 @@ export function compareStrategies(options: StrategyCompareOptions): {
       netEV: ev.netExpectedValue,
       breakEvenProbability: risk.breakEvenProbability,
       lossProbability: risk.lossProbability,
-      targetHitProbability: risk.highValueHitProbability,
+      targetHitProbability: chaseOutcome ? chaseOutcome.hitProbability : risk.highValueHitProbability,
     };
   });
 
