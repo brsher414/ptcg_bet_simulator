@@ -65,15 +65,24 @@ function expandCardValues(poolState: PoolState): number[] {
   return values;
 }
 
-function calcQuantile(samples: number[], q: number): number {
-  if (samples.length === 0) return 0;
-  const sorted = [...samples].sort((a, b) => a - b);
-  const index = (sorted.length - 1) * q;
-  const lo = Math.floor(index);
-  const hi = Math.ceil(index);
-  if (lo === hi) return sorted[lo];
-  const weight = index - lo;
-  return sorted[lo] * (1 - weight) + sorted[hi] * weight;
+function calcWeightedQuantile(values: number[], probabilities: number[], q: number): number {
+  if (values.length === 0 || probabilities.length === 0) return 0;
+
+  const clampedQ = Math.min(1, Math.max(0, q));
+  const totalWeight = probabilities.reduce((sum, prob) => sum + Math.max(0, prob), 0);
+  if (totalWeight <= 0) return 0;
+
+  const target = clampedQ * totalWeight;
+  let cumulative = 0;
+
+  for (let i = 0; i < values.length; i += 1) {
+    cumulative += Math.max(0, probabilities[i] ?? 0);
+    if (cumulative >= target) {
+      return values[i];
+    }
+  }
+
+  return values[values.length - 1] ?? 0;
 }
 
 function summarizeDistribution(distribution: Distribution): Omit<RiskCalcResult, 'mode' | 'isEstimate' | 'plannedDraws' | 'actualDraws' | 'maxPlayableDraws' | 'sampleCount'> {
@@ -94,9 +103,9 @@ function summarizeDistribution(distribution: Distribution): Omit<RiskCalcResult,
     expectedProfit: distribution.mean,
     variance: distribution.variance,
     quantiles: {
-      p5: calcQuantile(distribution.profits, 0.05),
-      p50: calcQuantile(distribution.profits, 0.5),
-      p95: calcQuantile(distribution.profits, 0.95),
+      p5: calcWeightedQuantile(distribution.profits, distribution.probabilities, 0.05),
+      p50: calcWeightedQuantile(distribution.profits, distribution.probabilities, 0.5),
+      p95: calcWeightedQuantile(distribution.profits, distribution.probabilities, 0.95),
     },
     breakEvenProbability,
     lossProbability,
