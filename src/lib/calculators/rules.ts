@@ -1,35 +1,25 @@
-export function getMaxPlayableDraws(totalCards: number, stopAtCount: number): number {
-  return Math.max(0, totalCards - stopAtCount);
+export interface LockRuleOptions {
+  totalCards: number;
+  lockAtCount: number;
+  openedPacksThisRound: number;
+  unlockRequiredPacks: number;
 }
 
-export function clampPlannedDraws(
-  plannedN: number,
-  totalCards: number,
-  stopAtCount: number,
-): number {
-  const maxPlayableDraws = getMaxPlayableDraws(totalCards, stopAtCount);
-  return Math.min(Math.max(0, plannedN), maxPlayableDraws);
+export function canContinueAfterLock(
+  openedPacksThisRound: number,
+  unlockRequiredPacks: number,
+): boolean {
+  return openedPacksThisRound > unlockRequiredPacks;
 }
 
-export type CalcMode = 'drawToFloor' | 'fixedDraws' | 'chaseJackpot';
+export function getMaxPlayableDraws(options: LockRuleOptions): number {
+  const { totalCards, lockAtCount, openedPacksThisRound, unlockRequiredPacks } = options;
+  if (totalCards <= 0) return 0;
+  if (canContinueAfterLock(openedPacksThisRound, unlockRequiredPacks)) return totalCards;
+  return Math.max(0, totalCards - lockAtCount);
+}
 
-export function resolveDrawsByMode(
-  mode: CalcMode,
-  plannedN: number,
-  totalCards: number,
-  stopAtCount: number,
-): number {
-  const maxPlayableDraws = getMaxPlayableDraws(totalCards, stopAtCount);
-
-  switch (mode) {
-    case 'drawToFloor':
-      return maxPlayableDraws;
-    case 'fixedDraws':
-    case 'chaseJackpot':
-      return clampPlannedDraws(plannedN, totalCards, stopAtCount);
-    default: {
-      const exhaustiveCheck: never = mode;
-      return exhaustiveCheck;
-    }
-  }
+export function clampPlannedDraws(plannedN: number, options: LockRuleOptions): number {
+  const maxPlayableDraws = getMaxPlayableDraws(options);
+  return Math.min(Math.max(0, Math.floor(plannedN)), maxPlayableDraws);
 }

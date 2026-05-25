@@ -7,7 +7,9 @@ export interface TargetCalcInput {
   targetRemaining: number;
   totalRemaining: number;
   plannedDraws: number;
-  stopAtCount: number;
+  lockAtCount: number;
+  openedPacksThisRound: number;
+  unlockRequiredPacks: number;
   costPerEntry: number;
   targetValue: number;
   /**
@@ -73,10 +75,13 @@ export function calcTargetChaseMetrics(input: TargetCalcInput): TargetCalcResult
   const totalRemaining = safeNonNegativeInt(input.totalRemaining);
   const targetRemaining = Math.min(safeNonNegativeInt(input.targetRemaining), totalRemaining);
   const plannedDraws = safeNonNegativeInt(input.plannedDraws);
-  const stopAtCount = safeNonNegativeInt(input.stopAtCount);
+  const lockAtCount = safeNonNegativeInt(input.lockAtCount);
+  const openedPacksThisRound = safeNonNegativeInt(input.openedPacksThisRound);
+  const unlockRequiredPacks = safeNonNegativeInt(input.unlockRequiredPacks);
+  const lockRule = { totalCards: totalRemaining, lockAtCount, openedPacksThisRound, unlockRequiredPacks };
 
-  const maxPlayableDraws = getMaxPlayableDraws(totalRemaining, stopAtCount);
-  const actualDraws = clampPlannedDraws(plannedDraws, totalRemaining, stopAtCount);
+  const maxPlayableDraws = getMaxPlayableDraws(lockRule);
+  const actualDraws = clampPlannedDraws(plannedDraws, lockRule);
 
   const noHitProbability = combinationRatioNoHit(totalRemaining, targetRemaining, actualDraws);
   const hitProbabilityAtLeastOne = 1 - noHitProbability;

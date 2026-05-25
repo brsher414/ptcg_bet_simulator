@@ -1,287 +1,107 @@
 import type { PoolState } from '../../types/pool';
-import { clampPlannedDraws, getMaxPlayableDraws } from './rules';
+import { clampPlannedDraws, getMaxPlayableDraws, type LockRuleOptions } from './rules';
 
-export type RiskCalcMode = 'exactDP' | 'monteCarlo';
-
-export interface RiskCalcOptions {
+export interface RiskCalcOptions extends LockRuleOptions {
   plannedDraws: number;
   costPerEntry: number;
-  stopAtCount: number;
   highValueThreshold?: number;
-  monteCarloSamples?: number;
-  dpStateLimit?: number;
-}
-
-export interface RiskQuantiles {
-  p5: number;
-  p50: number;
-  p95: number;
+  targetPrize?: number;
 }
 
 export interface RiskCalcResult {
-  mode: RiskCalcMode;
-  isEstimate: boolean;
   plannedDraws: number;
   actualDraws: number;
   maxPlayableDraws: number;
   expectedProfit: number;
-  variance: number;
-  quantiles: RiskQuantiles;
   breakEvenProbability: number;
   lossProbability: number;
   highValueHitProbability: number;
-  sampleCount?: number;
-}
-
-interface Distribution {
-  profits: number[];
-  probabilities: number[];
-  mean: number;
-  variance: number;
-  highValueHitProbability: number;
+  targetHitProbability: number;
+  expectedDraws: number;
+  maxLoss: number;
 }
 
 const DEFAULT_HIGH_VALUE_THRESHOLD = 8000;
-const DEFAULT_MC_SAMPLES = 30000;
-const DEFAULT_DP_STATE_LIMIT = 120_000;
 
-function resolveTotalRemaining(poolState: PoolState): number {
-  if (poolState.totalRemaining > 0) {
-    return poolState.totalRemaining;
-  }
+type DistEntry = { sum: number; draws: number; hitHigh: boolean; hitTarget: boolean; prob: number };
 
-  return poolState.tiers.reduce((sum, tier) => sum + Math.max(0, tier.count), 0);
-}
+type ValueBucket = { value: number; count: number };
 
-function expandCardValues(poolState: PoolState): number[] {
-  const values: number[] = [];
+function buildBuckets(poolState: PoolState): ValueBucket[] {
+  const counts = new Map<number, number>();
   for (const tier of poolState.tiers) {
-    const count = Math.max(0, Math.floor(tier.count));
-    for (let i = 0; i < count; i += 1) {
-      values.push(tier.value);
-    }
+    const c = Math.max(0, tier.count);
+    if (c <= 0) continue;
+    counts.set(tier.value, (counts.get(tier.value) ?? 0) + c);
   }
-
-  return values;
+  return [...counts.entries()].map(([value, count]) => ({ value, count })).sort((a, b) => a.value - b.value);
 }
 
-function calcWeightedQuantile(values: number[], probabilities: number[], q: number): number {
-  if (values.length === 0 || probabilities.length === 0) return 0;
-
-  const clampedQ = Math.min(1, Math.max(0, q));
-  const totalWeight = probabilities.reduce((sum, prob) => sum + Math.max(0, prob), 0);
-  if (totalWeight <= 0) return 0;
-
-  const target = clampedQ * totalWeight;
-  let cumulative = 0;
-
-  for (let i = 0; i < values.length; i += 1) {
-    cumulative += Math.max(0, probabilities[i] ?? 0);
-    if (cumulative >= target) {
-      return values[i];
-    }
+function mergeDistributions(items: DistEntry[]): DistEntry[] {
+  const merged = new Map<string, number>();
+  for (const item of items) {
+    const key = `${item.sum}|${item.draws}|${item.hitHigh ? 1 : 0}|${item.hitTarget ? 1 : 0}`;
+    merged.set(key, (merged.get(key) ?? 0) + item.prob);
   }
-
-  return values[values.length - 1] ?? 0;
-}
-
-function summarizeDistribution(distribution: Distribution): Omit<RiskCalcResult, 'mode' | 'isEstimate' | 'plannedDraws' | 'actualDraws' | 'maxPlayableDraws' | 'sampleCount'> {
-  let breakEvenProbability = 0;
-  let lossProbability = 0;
-
-  for (let i = 0; i < distribution.profits.length; i += 1) {
-    const profit = distribution.profits[i];
-    const prob = distribution.probabilities[i];
-    if (profit >= 0) {
-      breakEvenProbability += prob;
-    } else {
-      lossProbability += prob;
-    }
-  }
-
-  return {
-    expectedProfit: distribution.mean,
-    variance: distribution.variance,
-    quantiles: {
-      p5: calcWeightedQuantile(distribution.profits, distribution.probabilities, 0.05),
-      p50: calcWeightedQuantile(distribution.profits, distribution.probabilities, 0.5),
-      p95: calcWeightedQuantile(distribution.profits, distribution.probabilities, 0.95),
-    },
-    breakEvenProbability,
-    lossProbability,
-    highValueHitProbability: distribution.highValueHitProbability,
-  };
-}
-
-function exactDistribution(values: number[], draws: number, costPerEntry: number, highValueThreshold: number): Distribution {
-  const states = new Map<string, number>();
-  states.set(`${draws}|0`, 1);
-
-  for (let idx = 0; idx < values.length; idx += 1) {
-    const value = values[idx];
-    const next = new Map<string, number>();
-
-    for (const [key, prob] of states.entries()) {
-      const [remainStr, sumStr] = key.split('|');
-      const remain = Number(remainStr);
-      const sum = Number(sumStr);
-      const left = values.length - idx;
-
-      if (remain === 0 || left === remain) {
-        const forcedSum = left === remain ? sum + value : sum;
-        const forcedRemain = left === remain ? remain - 1 : remain;
-        const nextKey = `${forcedRemain}|${forcedSum}`;
-        next.set(nextKey, (next.get(nextKey) ?? 0) + prob);
-        continue;
-      }
-
-      const pickProb = remain / left;
-      const skipProb = 1 - pickProb;
-
-      const pickKey = `${remain - 1}|${sum + value}`;
-      next.set(pickKey, (next.get(pickKey) ?? 0) + prob * pickProb);
-
-      const skipKey = `${remain}|${sum}`;
-      next.set(skipKey, (next.get(skipKey) ?? 0) + prob * skipProb);
-    }
-
-    states.clear();
-    for (const [k, v] of next.entries()) {
-      states.set(k, v);
-    }
-  }
-
-  const profitMap = new Map<number, number>();
-  for (const [key, prob] of states.entries()) {
-    const [remainStr, sumStr] = key.split('|');
-    if (Number(remainStr) !== 0) continue;
-    const profit = Number(sumStr) - costPerEntry * draws;
-    profitMap.set(profit, (profitMap.get(profit) ?? 0) + prob);
-  }
-
-  const profits = [...profitMap.keys()].sort((a, b) => a - b);
-  const probabilities = profits.map((profit) => profitMap.get(profit) ?? 0);
-
-  let mean = 0;
-  for (let i = 0; i < profits.length; i += 1) {
-    mean += profits[i] * probabilities[i];
-  }
-
-  let variance = 0;
-  for (let i = 0; i < profits.length; i += 1) {
-    const delta = profits[i] - mean;
-    variance += delta * delta * probabilities[i];
-  }
-
-  let highValueMissProbability = 1;
-  let nonHighValueCount = 0;
-  for (let i = 0; i < values.length; i += 1) {
-    if (values[i] < highValueThreshold) nonHighValueCount += 1;
-  }
-  if (draws > nonHighValueCount) {
-    highValueMissProbability = 0;
-  } else if (draws > 0) {
-    for (let i = 0; i < draws; i += 1) {
-      highValueMissProbability *= (nonHighValueCount - i) / (values.length - i);
-    }
-  }
-
-  return { profits, probabilities, mean, variance, highValueHitProbability: 1 - highValueMissProbability };
-}
-
-function monteCarloDistribution(values: number[], draws: number, costPerEntry: number, sampleCount: number, highValueThreshold: number): Distribution {
-  const profits: number[] = [];
-  let mean = 0;
-  let m2 = 0;
-  let highValueHitSamples = 0;
-
-  for (let sample = 0; sample < sampleCount; sample += 1) {
-    const shuffled = [...values];
-    for (let i = shuffled.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-
-    let sum = 0;
-    let hitHighValue = false;
-    for (let d = 0; d < draws; d += 1) {
-      const drawnValue = shuffled[d] ?? 0;
-      sum += drawnValue;
-      if (drawnValue >= highValueThreshold) {
-        hitHighValue = true;
-      }
-    }
-    if (hitHighValue) highValueHitSamples += 1;
-
-    const profit = sum - costPerEntry * draws;
-    profits.push(profit);
-
-    const n = sample + 1;
-    const delta = profit - mean;
-    mean += delta / n;
-    const delta2 = profit - mean;
-    m2 += delta * delta2;
-  }
-
-  const variance = sampleCount > 1 ? m2 / sampleCount : 0;
-  const probabilities = Array.from({ length: profits.length }, () => 1 / Math.max(1, sampleCount));
-
-  return {
-    profits,
-    probabilities,
-    mean,
-    variance,
-    highValueHitProbability: highValueHitSamples / Math.max(1, sampleCount),
-  };
+  return [...merged.entries()].map(([key, prob]) => {
+    const [sumS, drawsS, highS, targetS] = key.split('|');
+    return { sum: Number(sumS), draws: Number(drawsS), hitHigh: highS === '1', hitTarget: targetS === '1', prob };
+  });
 }
 
 export function calcRiskMetrics(poolState: PoolState, options: RiskCalcOptions): RiskCalcResult {
-  const totalRemaining = resolveTotalRemaining(poolState);
-  const maxPlayableDraws = getMaxPlayableDraws(totalRemaining, options.stopAtCount);
-  const actualDraws = clampPlannedDraws(options.plannedDraws, totalRemaining, options.stopAtCount);
+  const lockRule: LockRuleOptions = options;
+  const maxPlayableDraws = getMaxPlayableDraws(lockRule);
+  const actualDraws = clampPlannedDraws(options.plannedDraws, lockRule);
   const highValueThreshold = options.highValueThreshold ?? DEFAULT_HIGH_VALUE_THRESHOLD;
+  const targetPrize = options.targetPrize ?? 20000;
+  const buckets = buildBuckets(poolState);
 
-  if (actualDraws === 0 || totalRemaining <= 0) {
-    return {
-      mode: 'exactDP',
-      isEstimate: false,
-      plannedDraws: options.plannedDraws,
-      actualDraws,
-      maxPlayableDraws,
-      expectedProfit: 0,
-      variance: 0,
-      quantiles: { p5: 0, p50: 0, p95: 0 },
-      breakEvenProbability: 1,
-      lossProbability: 0,
-      highValueHitProbability: 0,
-    };
+  const totalCards = buckets.reduce((s, b) => s + b.count, 0);
+  if (actualDraws <= 0 || totalCards === 0) {
+    return { plannedDraws: options.plannedDraws, actualDraws: 0, maxPlayableDraws, expectedProfit: 0, breakEvenProbability: 1, lossProbability: 0, highValueHitProbability: 0, targetHitProbability: 0, expectedDraws: 0, maxLoss: 0 };
   }
 
-  const values = expandCardValues(poolState);
-  const stateLimit = options.dpStateLimit ?? DEFAULT_DP_STATE_LIMIT;
-  const mode: RiskCalcMode = actualDraws * values.length <= stateLimit ? 'exactDP' : 'monteCarlo';
+  const memo = new Map<string, DistEntry[]>();
 
-  if (mode === 'exactDP') {
-    const dist = exactDistribution(values, actualDraws, options.costPerEntry, highValueThreshold);
-    return {
-      mode,
-      isEstimate: false,
-      plannedDraws: options.plannedDraws,
-      actualDraws,
-      maxPlayableDraws,
-      ...summarizeDistribution(dist),
-    };
-  }
+  const dfs = (counts: number[], draws: number, sum: number, hitHigh: boolean, hitTarget: boolean): DistEntry[] => {
+    const remaining = counts.reduce((s, c) => s + c, 0);
+    if (draws >= actualDraws || remaining === 0) return [{ sum, draws, hitHigh, hitTarget, prob: 1 }];
 
-  const sampleCount = Math.max(1000, Math.floor(options.monteCarloSamples ?? DEFAULT_MC_SAMPLES));
-  const dist = monteCarloDistribution(values, actualDraws, options.costPerEntry, sampleCount, highValueThreshold);
-  return {
-    mode,
-    isEstimate: true,
-    plannedDraws: options.plannedDraws,
-    actualDraws,
-    maxPlayableDraws,
-    sampleCount,
-    ...summarizeDistribution(dist),
+    const stateKey = `${counts.join(',')}|${draws}|${sum}|${hitHigh ? 1 : 0}|${hitTarget ? 1 : 0}`;
+    const cached = memo.get(stateKey);
+    if (cached) return cached;
+
+    const outcomes: DistEntry[] = [];
+    for (let i = 0; i < counts.length; i += 1) {
+      const count = counts[i];
+      if (count <= 0) continue;
+      const value = buckets[i].value;
+      const p = count / remaining;
+      const nextCounts = [...counts];
+      nextCounts[i] -= 1;
+      const sub = dfs(nextCounts, draws + 1, sum + value, hitHigh || value >= highValueThreshold, hitTarget || value === targetPrize);
+      for (const entry of sub) outcomes.push({ ...entry, prob: entry.prob * p });
+    }
+
+    const merged = mergeDistributions(outcomes);
+    memo.set(stateKey, merged);
+    return merged;
   };
+
+  const initialCounts = buckets.map((b) => b.count);
+  const outcomes = dfs(initialCounts, 0, 0, false, false);
+
+  let expectedProfit = 0; let breakEvenProbability = 0; let lossProbability = 0; let highValueHitProbability = 0; let targetHitProbability = 0; let expectedDraws = 0; let maxLoss = 0;
+  for (const o of outcomes) {
+    const profit = o.sum - o.draws * options.costPerEntry;
+    expectedProfit += profit * o.prob;
+    expectedDraws += o.draws * o.prob;
+    if (profit >= 0) breakEvenProbability += o.prob; else lossProbability += o.prob;
+    if (o.hitHigh) highValueHitProbability += o.prob;
+    if (o.hitTarget) targetHitProbability += o.prob;
+    maxLoss = Math.min(maxLoss, profit);
+  }
+
+  return { plannedDraws: options.plannedDraws, actualDraws, maxPlayableDraws, expectedProfit, breakEvenProbability, lossProbability, highValueHitProbability, targetHitProbability, expectedDraws, maxLoss };
 }
