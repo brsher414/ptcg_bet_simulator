@@ -17,6 +17,12 @@ export interface StrategyCompareOptions {
   lockAtCount: number; openedPacksThisRound: number; unlockRequiredPacks: number; sortBy?: SortKey; recommendationGoal?: RecommendationGoal;
 }
 
+function calcRecommendationScore(row: StrategyMetrics, goal: RecommendationGoal): number {
+  if (goal === 'conservative') return row.breakEvenProbability * 0.7 - row.lossProbability * 0.2 + row.netEV * 0.1;
+  if (goal === 'aggressive') return row.targetHitProbability * 0.5 + row.highValueHitProbability * 0.25 + row.netEV * 0.25;
+  return row.netEV * 0.5 + row.breakEvenProbability * 0.3 + row.targetHitProbability * 0.2;
+}
+
 function runStoppingDFS(pool: PoolState, cost: number, maxDraws: number, targetPrize: number, highValueThreshold: number, stopWhen: (v: number, hitTarget: boolean, drawIdx: number) => boolean) {
   const values: number[] = []; for (const t of pool.tiers) for (let i = 0; i < Math.max(0, t.count); i += 1) values.push(t.value);
   const outcomes: Array<{profit:number;prob:number;draws:number;hitTarget:boolean;hitHigh:boolean;reward:number}> = [];
@@ -59,6 +65,7 @@ export function compareStrategies(options: StrategyCompareOptions): { rows: Stra
   ];
 
   const sorted = [...rows].sort((a, b) => (b[options.sortBy ?? 'netEV'] as number) - (a[options.sortBy ?? 'netEV'] as number));
-  const recommended = sorted[0] ?? null;
+  const goal = options.recommendationGoal ?? 'balanced';
+  const recommended = [...rows].sort((a, b) => calcRecommendationScore(b, goal) - calcRecommendationScore(a, goal))[0] ?? null;
   return { rows: sorted, recommended };
 }
