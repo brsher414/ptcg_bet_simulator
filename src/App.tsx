@@ -38,7 +38,7 @@ function App() {
 
     <section className='card'><h2>锁车状态</h2><p>当前剩余卡数：{totalCards}</p><p>锁车阈值：剩 {lockAtCount} 张</p><p>本轮已开包数：{openedPacksThisRound}</p><p>继续条件：开包数 &gt; {unlockRequiredPacks}</p><p>当前是否满足继续条件：{canContinue ? '是' : '否'}</p><p>当前最大可参与抽数：{maxPlayableDraws}</p><p>{canContinue ? '你已满足继续条件，即使池子剩 10 张，也可以继续参与。' : '你还未满足继续条件，池子最多只能抽到剩 10 张。若大奖留在最后 10 张，你将无法继续追。'}</p></section>
 
-    <section className='card'><h2>当前最大可接受入池成本</h2><p>当前最大可接受入池成本：{fmt(single.breakEvenEntryCost)}</p><p>你的入池成本：{fmt(costPerEntry)}</p><p>差距：{fmt(single.entryCostGap)}</p><p>当前单抽：{single.isPositiveEV ? '正期望' : '负期望'}</p></section>
+    <section className='card'><h2>当前最大可接受入池成本</h2><p>当前最大可接受入池成本：{fmt(single.breakEvenEntryCost)}</p><p>你的入池成本：{fmt(costPerEntry)}</p><p>差距：{fmt(single.entryCostGap)}</p><p>当前单抽：{single.isPositiveEV ? '正期望' : '负期望'}</p><p>{single.entryCostGap >= 0 ? `你的入池成本比盈亏平衡线低 ${fmt(Math.abs(single.entryCostGap))}，所以当前单抽为正期望。` : `你的入池成本比盈亏平衡线高 ${fmt(Math.abs(single.entryCostGap))}，所以当前单抽为负期望。`}</p><p>当前最大可接受入池成本，也就是当前池子的盈亏平衡线。</p><p>如果你的真实入池成本低于这个数，当前单抽长期是正期望；</p><p>如果你的真实入池成本高于这个数，当前单抽长期是负期望。</p><p>它不是建议你一定用这个价格入池，而是说明当前奖池数学上最多值多少钱一次入池。</p></section>
 
     <PoolEditor tiers={tiers} costPerEntry={costPerEntry} onTiersChange={setTiers} onCostChange={setCostPerEntry} />
 
