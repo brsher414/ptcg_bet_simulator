@@ -63,6 +63,50 @@ body {
   color: #374151;
 }
 
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.form-row input {
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+}
+
+.info {
+  margin-top: 0.5rem !important;
+  color: #1d4ed8 !important;
+}
+
+.warning {
+  margin-top: 0.5rem !important;
+  color: #b91c1c !important;
+  font-weight: 600;
+}
+
+button {
+  margin-top: 0.75rem;
+  border: none;
+  border-radius: 0.5rem;
+  padding: 0.6rem 1rem;
+  background: #111827;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.result-list {
+  margin: 0.5rem 0 0;
+  padding-left: 1.2rem;
+}
+
 @media (min-width: 768px) {
   .app-shell {
     padding: 1.5rem;
