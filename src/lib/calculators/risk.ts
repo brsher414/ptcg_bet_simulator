@@ -38,6 +38,7 @@ interface Distribution {
   probabilities: number[];
   mean: number;
   variance: number;
+  highValueHitProbability: number;
 }
 
 const DEFAULT_HIGH_VALUE_THRESHOLD = 8000;
@@ -75,10 +76,9 @@ function calcQuantile(samples: number[], q: number): number {
   return sorted[lo] * (1 - weight) + sorted[hi] * weight;
 }
 
-function summarizeDistribution(distribution: Distribution, highValueThreshold: number, cost: number): Omit<RiskCalcResult, 'mode' | 'isEstimate' | 'plannedDraws' | 'actualDraws' | 'maxPlayableDraws' | 'sampleCount'> {
+function summarizeDistribution(distribution: Distribution): Omit<RiskCalcResult, 'mode' | 'isEstimate' | 'plannedDraws' | 'actualDraws' | 'maxPlayableDraws' | 'sampleCount'> {
   let breakEvenProbability = 0;
   let lossProbability = 0;
-  let highValueHitProbability = 0;
 
   for (let i = 0; i < distribution.profits.length; i += 1) {
     const profit = distribution.profits[i];
@@ -87,10 +87,6 @@ function summarizeDistribution(distribution: Distribution, highValueThreshold: n
       breakEvenProbability += prob;
     } else {
       lossProbability += prob;
-    }
-
-    if (profit + cost >= highValueThreshold) {
-      highValueHitProbability += prob;
     }
   }
 
@@ -104,11 +100,11 @@ function summarizeDistribution(distribution: Distribution, highValueThreshold: n
     },
     breakEvenProbability,
     lossProbability,
-    highValueHitProbability,
+    highValueHitProbability: distribution.highValueHitProbability,
   };
 }
 
-function exactDistribution(values: number[], draws: number, costPerEntry: number): Distribution {
+function exactDistribution(values: number[], draws: number, costPerEntry: number, highValueThreshold: number): Distribution {
   const states = new Map<string, number>();
   states.set(`${draws}|0`, 1);
 
@@ -168,13 +164,27 @@ function exactDistribution(values: number[], draws: number, costPerEntry: number
     variance += delta * delta * probabilities[i];
   }
 
-  return { profits, probabilities, mean, variance };
+  let highValueMissProbability = 1;
+  let nonHighValueCount = 0;
+  for (let i = 0; i < values.length; i += 1) {
+    if (values[i] < highValueThreshold) nonHighValueCount += 1;
+  }
+  if (draws > nonHighValueCount) {
+    highValueMissProbability = 0;
+  } else if (draws > 0) {
+    for (let i = 0; i < draws; i += 1) {
+      highValueMissProbability *= (nonHighValueCount - i) / (values.length - i);
+    }
+  }
+
+  return { profits, probabilities, mean, variance, highValueHitProbability: 1 - highValueMissProbability };
 }
 
-function monteCarloDistribution(values: number[], draws: number, costPerEntry: number, sampleCount: number): Distribution {
+function monteCarloDistribution(values: number[], draws: number, costPerEntry: number, sampleCount: number, highValueThreshold: number): Distribution {
   const profits: number[] = [];
   let mean = 0;
   let m2 = 0;
+  let highValueHitSamples = 0;
 
   for (let sample = 0; sample < sampleCount; sample += 1) {
     const shuffled = [...values];
@@ -184,9 +194,15 @@ function monteCarloDistribution(values: number[], draws: number, costPerEntry: n
     }
 
     let sum = 0;
+    let hitHighValue = false;
     for (let d = 0; d < draws; d += 1) {
-      sum += shuffled[d] ?? 0;
+      const drawnValue = shuffled[d] ?? 0;
+      sum += drawnValue;
+      if (drawnValue >= highValueThreshold) {
+        hitHighValue = true;
+      }
     }
+    if (hitHighValue) highValueHitSamples += 1;
 
     const profit = sum - costPerEntry * draws;
     profits.push(profit);
@@ -201,7 +217,13 @@ function monteCarloDistribution(values: number[], draws: number, costPerEntry: n
   const variance = sampleCount > 1 ? m2 / sampleCount : 0;
   const probabilities = Array.from({ length: profits.length }, () => 1 / Math.max(1, sampleCount));
 
-  return { profits, probabilities, mean, variance };
+  return {
+    profits,
+    probabilities,
+    mean,
+    variance,
+    highValueHitProbability: highValueHitSamples / Math.max(1, sampleCount),
+  };
 }
 
 export function calcRiskMetrics(poolState: PoolState, options: RiskCalcOptions): RiskCalcResult {
@@ -231,19 +253,19 @@ export function calcRiskMetrics(poolState: PoolState, options: RiskCalcOptions):
   const mode: RiskCalcMode = actualDraws * values.length <= stateLimit ? 'exactDP' : 'monteCarlo';
 
   if (mode === 'exactDP') {
-    const dist = exactDistribution(values, actualDraws, options.costPerEntry);
+    const dist = exactDistribution(values, actualDraws, options.costPerEntry, highValueThreshold);
     return {
       mode,
       isEstimate: false,
       plannedDraws: options.plannedDraws,
       actualDraws,
       maxPlayableDraws,
-      ...summarizeDistribution(dist, highValueThreshold, options.costPerEntry * actualDraws),
+      ...summarizeDistribution(dist),
     };
   }
 
   const sampleCount = Math.max(1000, Math.floor(options.monteCarloSamples ?? DEFAULT_MC_SAMPLES));
-  const dist = monteCarloDistribution(values, actualDraws, options.costPerEntry, sampleCount);
+  const dist = monteCarloDistribution(values, actualDraws, options.costPerEntry, sampleCount, highValueThreshold);
   return {
     mode,
     isEstimate: true,
@@ -251,6 +273,6 @@ export function calcRiskMetrics(poolState: PoolState, options: RiskCalcOptions):
     actualDraws,
     maxPlayableDraws,
     sampleCount,
-    ...summarizeDistribution(dist, highValueThreshold, options.costPerEntry * actualDraws),
+    ...summarizeDistribution(dist),
   };
 }
