@@ -177,3 +177,33 @@ button:disabled {
 .strategy-table tr.is-recommended {
   background: #ecfdf5;
 }
+
+.pool-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.pool-toolbar button,
+.danger-btn {
+  margin-top: 0;
+}
+
+.tier-table {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 0.4rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.tier-header {
+  font-size: 0.85rem;
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.danger-btn {
+  background: #b91c1c;
+}
