@@ -16,6 +16,16 @@ const TEMPLATE_TIERS: PrizeTier[] = [
   { value: 300, count: 32 },
 ];
 
+const sanitizeNonNegativeNumber = (value: unknown): number => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, numeric) : 0;
+};
+
+const sanitizeNonNegativeInteger = (value: unknown): number => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : 0;
+};
+
 export function PoolEditor({ tiers, costPerEntry, onTiersChange, onCostChange }: PoolEditorProps) {
   const totalCount = useMemo(() => tiers.reduce((acc, tier) => acc + (Number.isFinite(tier.count) ? tier.count : 0), 0), [tiers]);
 
@@ -28,7 +38,7 @@ export function PoolEditor({ tiers, costPerEntry, onTiersChange, onCostChange }:
     if (totalCount < 1) {
       errors.push('奖池至少需要 1 张卡。');
     }
-    if (!(costPerEntry > 0)) {
+    if (!Number.isFinite(costPerEntry) || costPerEntry <= 0) {
       errors.push('单抽成本必须是正数。');
     }
     return errors;
@@ -40,7 +50,7 @@ export function PoolEditor({ tiers, costPerEntry, onTiersChange, onCostChange }:
         i === index
           ? {
               ...tier,
-              [field]: field === 'count' ? Math.max(0, Math.floor(value || 0)) : Math.max(0, value || 0),
+              [field]: field === 'count' ? sanitizeNonNegativeInteger(value) : sanitizeNonNegativeNumber(value),
             }
           : tier,
       ),
@@ -62,8 +72,8 @@ export function PoolEditor({ tiers, costPerEntry, onTiersChange, onCostChange }:
       const nextTiers = parsed.map((item) => {
         const row = item as Partial<PrizeTier>;
         return {
-          value: Math.max(0, Number(row.value) || 0),
-          count: Math.max(0, Math.floor(Number(row.count) || 0)),
+          value: sanitizeNonNegativeNumber(row.value),
+          count: sanitizeNonNegativeInteger(row.count),
         };
       });
       onTiersChange(nextTiers);
@@ -126,7 +136,10 @@ export function PoolEditor({ tiers, costPerEntry, onTiersChange, onCostChange }:
           min={0.01}
           step={1}
           value={costPerEntry}
-          onChange={(e) => onCostChange(Number(e.target.value) || 0)}
+          onChange={(e) => {
+            const value = Number(e.target.value);
+            onCostChange(Number.isFinite(value) ? value : 0);
+          }}
         />
       </div>
 
