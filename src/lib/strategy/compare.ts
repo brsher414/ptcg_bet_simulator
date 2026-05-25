@@ -59,7 +59,7 @@ function runStoppingDFS(pool: PoolState, cost: number, maxDraws: number, targetP
       const agg: OutcomeAgg = {
         expectedProfit: profit, breakEvenProbability: profit >= 0 ? 1 : 0, lossProbability: profit < 0 ? 1 : 0,
         targetHitProbability: hitTarget ? 1 : 0, highValueHitProbability: hitHigh ? 1 : 0, expectedDraws: drawIdx,
-        maxLoss: profit, totalCost: drawIdx * cost, totalEV: reward, probabilityMass: 1,
+        maxLoss: Math.min(profit, 0), totalCost: drawIdx * cost, totalEV: reward, probabilityMass: 1,
       };
       memo.set(key, agg);
       return agg;
@@ -84,7 +84,7 @@ function runStoppingDFS(pool: PoolState, cost: number, maxDraws: number, targetP
         child = {
           expectedProfit: profit, breakEvenProbability: profit >= 0 ? 1 : 0, lossProbability: profit < 0 ? 1 : 0,
           targetHitProbability: nextTarget ? 1 : 0, highValueHitProbability: nextHigh ? 1 : 0, expectedDraws: drawIdx + 1,
-          maxLoss: profit, totalCost: (drawIdx + 1) * cost, totalEV: nextReward, probabilityMass: 1,
+          maxLoss: Math.min(profit, 0), totalCost: (drawIdx + 1) * cost, totalEV: nextReward, probabilityMass: 1,
         };
       } else {
         child = dfs(nextCounts, drawIdx + 1, reward + value, nextTarget, nextHigh);
@@ -99,7 +99,7 @@ function runStoppingDFS(pool: PoolState, cost: number, maxDraws: number, targetP
       aggregate.totalCost += child.totalCost * probability;
       aggregate.totalEV += child.totalEV * probability;
       aggregate.probabilityMass += child.probabilityMass * probability;
-      aggregate.maxLoss = Math.min(aggregate.maxLoss, child.maxLoss);
+      aggregate.maxLoss = Math.min(aggregate.maxLoss, child.maxLoss, 0);
     }
 
     if (!Number.isFinite(aggregate.maxLoss)) aggregate.maxLoss = 0;
