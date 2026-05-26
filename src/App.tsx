@@ -38,7 +38,7 @@ function App() {
     if (avg < costPerEntry * 0.75) title = '继续观望';
     else if (avg < costPerEntry) title = '只适合娱乐小试';
     else title = '数学上可以考虑';
-    const reason = `当前单抽均值 ${fmt(avg)}，你的入池成本 ${fmt(costPerEntry)}。最多玩 ${effectivePlannedN} 次时，中 ${highValueThreshold}+ 概率 ${(topPlan.highValueHitProbability * 100).toFixed(1)}%，追 ${targetPrize} 概率 ${(topPlan.targetHitProbability * 100).toFixed(1)}%，回本概率 ${(topPlan.breakEvenProbability * 100).toFixed(1)}%，锁车挡住继续玩的风险 ${(topPlan.lossProbability * 100).toFixed(1)}%。`;
+    const reason = `当前单抽均值 ${fmt(avg)}，你的入池成本 ${fmt(costPerEntry)}。最多玩 ${effectivePlannedN} 次时，中 ${highValueThreshold}+ 概率 ${(topPlan.highValueHitProbability * 100).toFixed(1)}%，追 ${targetPrize} 概率 ${(topPlan.targetHitProbability * 100).toFixed(1)}%，回本概率 ${(topPlan.breakEvenProbability * 100).toFixed(1)}%，按该策略最终亏损的概率 ${(topPlan.lossProbability * 100).toFixed(1)}%。`;
     return { title, reason };
   }, [single.expectedValue, costPerEntry, effectivePlannedN, highValueThreshold, targetPrize, topPlan]);
 
@@ -51,7 +51,7 @@ function App() {
 
     <section className='card'><h2>🎲 大卡命中概率</h2><p>现在最多玩 {effectivePlannedN} 次，中 {highValueThreshold}+ 的概率：{(topPlan.highValueHitProbability * 100).toFixed(1)}%</p><p>现在最多玩 {effectivePlannedN} 次，命中目标 {targetPrize} 的概率：{(topPlan.targetHitProbability * 100).toFixed(1)}%</p><p>回本概率：{(topPlan.breakEvenProbability * 100).toFixed(1)}%</p><p>单抽均值：{fmt(single.expectedValue)}</p><p>你的入池成本：{fmt(costPerEntry)}</p><p>单抽 EV：{fmt(single.singleDrawEV)}</p><p>当前最大可接受入池成本：{fmt(single.breakEvenEntryCost)}</p></section>
 
-    <section className='card'><h2>🔒 锁车风险</h2><p>{canContinue ? '已解锁：你已满足 15 包解锁条件。即使奖池剩到 10 包，也可以继续追。' : '未解锁：你还没满足 15 包解锁条件。若奖池很快剩到 10 包，你可能会被锁车挡住。'}</p><p>当前剩余卡数：{totalCards}，锁车阈值：剩 {lockAtCount} 张。</p><p>你本轮已开包数：{openedPacksThisRound}，解锁条件：第 {unlockRequiredPacks} 包。</p><p>{openedPacksThisRound < unlockRequiredPacks ? '注意：即使你现在还没解锁，只要本轮继续开到第 15 包，就可以继续追。' : '你已经解锁，可继续根据概率决策。'}</p></section>
+    <section className='card'><h2>🔒 锁车风险</h2><p>{canContinue ? `已解锁：你已满足第 ${unlockRequiredPacks} 包的解锁条件。即使奖池剩到 ${lockAtCount} 包，也可以继续追。` : `未解锁：你还没满足第 ${unlockRequiredPacks} 包的解锁条件。若奖池很快剩到 ${lockAtCount} 包，你可能会被锁车挡住。`}</p><p>当前剩余卡数：{totalCards}，锁车阈值：剩 {lockAtCount} 张。</p><p>你本轮已开包数：{openedPacksThisRound}，解锁条件：第 {unlockRequiredPacks} 包。</p><p>{openedPacksThisRound < unlockRequiredPacks ? `注意：即使你现在还没解锁，只要本轮继续开到第 ${unlockRequiredPacks} 包，就可以继续追。` : '你已经解锁，可继续根据概率决策。'}</p></section>
 
     <PoolEditor tiers={tiers} costPerEntry={costPerEntry} onTiersChange={setTiers} onCostChange={setCostPerEntry} />
 
