@@ -127,11 +127,11 @@ export function compareStrategies(options: StrategyCompareOptions): { rows: Stra
   const chase = runStoppingDFS(options.poolState, options.costPerEntry, drawToLimit, options.targetPrize, options.highValueThreshold, (_, hitTarget) => hitTarget);
 
   const rows: StrategyMetrics[] = [
-    base('singleDraw', '只玩 1 次', 1, 1),
+    base('singleDraw', '只试 1 次', 1, 1),
     base('fixedN', '最多玩 N 次', fixedN, fixedN),
-    base('drawToLimit', '抽到当前可参与上限', drawToLimit, drawToLimit),
-    { id: 'stopOnHighValue', name: `抽到 ${formatCompactValue(options.highValueThreshold)}+ 就停，否则最多 N 次`, plannedDraws: fixedN, actualDraws: Number(stopOnHigh.actualDraws.toFixed(3)), totalCost: stopOnHigh.totalCost, totalEV: stopOnHigh.totalEV, netEV: stopOnHigh.expectedProfit, breakEvenProbability: stopOnHigh.breakEvenProbability, lossProbability: stopOnHigh.lossProbability, targetHitProbability: stopOnHigh.targetHitProbability, highValueHitProbability: stopOnHigh.highValueHitProbability, expectedDraws: stopOnHigh.expectedDraws, maxLoss: stopOnHigh.maxLoss },
-    { id: 'chaseTargetToLimit', name: `追 ${formatCompactValue(options.targetPrize)} 到可参与上限`, plannedDraws: drawToLimit, actualDraws: Number(chase.actualDraws.toFixed(3)), totalCost: chase.totalCost, totalEV: chase.totalEV, netEV: chase.expectedProfit, breakEvenProbability: chase.breakEvenProbability, lossProbability: chase.lossProbability, targetHitProbability: chase.targetHitProbability, highValueHitProbability: chase.highValueHitProbability, expectedDraws: chase.expectedDraws, maxLoss: chase.maxLoss },
+    base('drawToLimit', '最多试到锁车前上限', drawToLimit, drawToLimit),
+    { id: 'stopOnHighValue', name: `中 ${formatCompactValue(options.highValueThreshold)}+ 就撤`, plannedDraws: fixedN, actualDraws: Number(stopOnHigh.actualDraws.toFixed(3)), totalCost: stopOnHigh.totalCost, totalEV: stopOnHigh.totalEV, netEV: stopOnHigh.expectedProfit, breakEvenProbability: stopOnHigh.breakEvenProbability, lossProbability: stopOnHigh.lossProbability, targetHitProbability: stopOnHigh.targetHitProbability, highValueHitProbability: stopOnHigh.highValueHitProbability, expectedDraws: stopOnHigh.expectedDraws, maxLoss: stopOnHigh.maxLoss },
+    { id: 'chaseTargetToLimit', name: `追 ${formatCompactValue(options.targetPrize)}`, plannedDraws: drawToLimit, actualDraws: Number(chase.actualDraws.toFixed(3)), totalCost: chase.totalCost, totalEV: chase.totalEV, netEV: chase.expectedProfit, breakEvenProbability: chase.breakEvenProbability, lossProbability: chase.lossProbability, targetHitProbability: chase.targetHitProbability, highValueHitProbability: chase.highValueHitProbability, expectedDraws: chase.expectedDraws, maxLoss: chase.maxLoss },
   ];
 
   const sorted = [...rows].sort((a, b) => (b[options.sortBy ?? 'netEV'] as number) - (a[options.sortBy ?? 'netEV'] as number));

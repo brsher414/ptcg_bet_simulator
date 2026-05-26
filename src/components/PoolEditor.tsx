@@ -94,7 +94,7 @@ export function PoolEditor({ tiers, costPerEntry, onTiersChange, onCostChange }:
 
   return (
     <section className="card">
-      <h2>奖池编辑（直播）</h2>
+      <h2>🃏 当前剩余奖池</h2>
       <div className="pool-toolbar">
         <button type="button" onClick={() => onTiersChange(TEMPLATE_TIERS)}>一键填充示例模板</button>
         <button type="button" onClick={addTier}>新增行</button>
@@ -143,7 +143,7 @@ export function PoolEditor({ tiers, costPerEntry, onTiersChange, onCostChange }:
         />
       </div>
 
-      <p className="info">当前奖池总卡数：{totalCount}</p>
+      <p className="info">当前剩余奖池总卡数：{totalCount}</p>
       {validationErrors.map((error) => (
         <p key={error} className="warning">{error}</p>
       ))}
